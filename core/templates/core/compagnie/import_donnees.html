@@ -1,0 +1,221 @@
+{% extends "core/base.html" %}
+{% load static %}
+
+{% block title %}Import de Données — NAGODE Transport | MutualTransport{% endblock %}
+{% block user_name %}Nagode Admin{% endblock %}
+{% block user_display %}NAGODE Transport{% endblock %}
+{% block user_dropdown_name %}Kodjo NAGODE (Gérant){% endblock %}
+{% block user_email %}k.nagode@nagode-transport.tg{% endblock %}
+{% block logo_href %}{% url 'core:compagnie_dashboard' %}{% endblock %}
+
+{% block sidebar_nav %}
+{% with active_page="compagnie_import" %}
+{% include "core/includes/sidebar_compagnie.html" %}
+{% endwith %}
+{% endblock %}
+
+{% block mobile_nav %}
+<li><a href="{% url 'core:compagnie_dashboard' %}"><i class="fa-solid fa-gauge-high"></i>Tableau de bord</a></li>
+<li><a href="{% url 'core:compagnie_vehicules' %}"><i class="fa-solid fa-bus"></i>Véhicules</a></li>
+<li><a href="{% url 'core:compagnie_trajets' %}"><i class="fa-solid fa-route"></i>Trajets</a></li>
+<li><a href="{% url 'core:compagnie_reservations' %}"><i class="fa-solid fa-ticket"></i>Réservations</a></li>
+<li><a href="{% url 'core:compagnie_regles' %}"><i class="fa-solid fa-scale-balanced"></i>Règles d'annulation</a></li>
+<li class="active"><a href="{% url 'core:compagnie_import' %}"><i class="fa-solid fa-file-import"></i>Import de données</a></li>
+<li><a href="{% url 'core:compagnie_profil' %}"><i class="fa-solid fa-building-circle-check"></i>Profil compagnie</a></li>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Import de Données (CSV &amp; Excel)</h1>
+    <p class="subtitle">Chargement en masse des plannings de départs, grilles tarifaires et assignations de véhicules (BF-50, BF-51).</p>
+  </div>
+  <div class="page-header__actions">
+    <button type="button" class="m-btn m-btn--ghost" onclick="alert('Téléchargement du gabarit standard d\'importation (MutualTransport_Gabarit.xlsx)...');">
+      <i class="fa-solid fa-download"></i> Télécharger le modèle Excel
+    </button>
+  </div>
+</div>
+
+<div class="row">
+  <!-- Upload Zone -->
+  <div class="col-lg-6 mb-4">
+    <div class="m-card h-100">
+      <div class="m-card__header">
+        <div>
+          <h3 class="m-card__title">Zone de Téléversement</h3>
+          <p class="m-card__subtitle">Glissez votre fichier de planning pour analyse automatique</p>
+        </div>
+      </div>
+
+      <div class="p-5 text-center border-2 border-dashed rounded bg-light mb-4" style="border: 2px dashed var(--m-border); cursor: pointer;" onclick="document.getElementById('fileInput').click();">
+        <i class="fa-solid fa-cloud-arrow-up text-primary" style="font-size: 50px; margin-bottom: 14px;"></i>
+        <h5 class="fw-bold mb-1">Glissez votre fichier ici ou cliquez pour parcourir</h5>
+        <p class="text-muted small mb-3">Formats supportés : <strong>.xlsx, .xls, .csv</strong> (Taille max: 10 Mo)</p>
+        <button type="button" class="m-btn m-btn--primary">
+          <i class="fa-solid fa-folder-open"></i> Sélectionner un fichier
+        </button>
+        <input type="file" id="fileInput" class="d-none" accept=".csv, .xlsx, .xls" onchange="simulateFileUploaded(this)">
+      </div>
+
+      <div class="mb-3">
+        <label class="form-label small fw-semibold">Type de données à intégrer</label>
+        <select class="form-select" id="importTypeSelect">
+          <option value="planning">Planning hebdomadaire des trajets et horaires</option>
+          <option value="tarifs">Grille des tarifs par segment kilométrique</option>
+          <option value="flotte">Liste des autocars et conducteurs assignés</option>
+        </select>
+      </div>
+
+      <div class="mb-3 form-check">
+        <input type="checkbox" class="form-check-input" id="checkOverwrite" checked>
+        <label class="form-check-label small" for="checkOverwrite">Mettre à jour les départs existants avec les mêmes références</label>
+      </div>
+
+      <button type="button" class="m-btn m-btn--primary w-100" id="btnLaunchImport" onclick="processImport()">
+        <i class="fa-solid fa-play"></i> Lancer la validation et l'intégration
+      </button>
+    </div>
+  </div>
+
+  <!-- Guidelines & Schema format -->
+  <div class="col-lg-6 mb-4">
+    <div class="m-card h-100">
+      <div class="m-card__header">
+        <div>
+          <h3 class="m-card__title">Spécifications du Format d'Importation</h3>
+          <p class="m-card__subtitle">Colonnes requises dans votre classeur</p>
+        </div>
+      </div>
+
+      <div class="table-responsive mb-4">
+        <table class="table table-sm table-bordered small">
+          <thead class="table-light">
+            <tr>
+              <th>Colonne</th>
+              <th>Format</th>
+              <th>Exemple</th>
+              <th>Obligatoire</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>LIGNE_DEPART</code></td>
+              <td>Texte</td>
+              <td>Lomé (Agbalépédogan)</td>
+              <td><span class="badge bg-danger">Oui</span></td>
+            </tr>
+            <tr>
+              <td><code>LIGNE_ARRIVEE</code></td>
+              <td>Texte</td>
+              <td>Kara (Gare Centrale)</td>
+              <td><span class="badge bg-danger">Oui</span></td>
+            </tr>
+            <tr>
+              <td><code>DATE_HEURE</code></td>
+              <td>AAAA-MM-JJ HH:MM</td>
+              <td>2026-10-25 06:30</td>
+              <td><span class="badge bg-danger">Oui</span></td>
+            </tr>
+            <tr>
+              <td><code>PRIX_BILLET</code></td>
+              <td>Nombre entier (FCFA)</td>
+              <td>10000</td>
+              <td><span class="badge bg-danger">Oui</span></td>
+            </tr>
+            <tr>
+              <td><code>BUS_IMMAT</code></td>
+              <td>TG-XXXX-XX</td>
+              <td>TG-8412-BP</td>
+              <td><span class="badge bg-warning text-dark">Optionnel</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="alert alert-light border small">
+        <h6 class="fw-bold mb-1"><i class="fa-solid fa-shield-halved text-success me-1"></i>Contrôle de cohérence automatique</h6>
+        <p class="text-muted mb-0">Le système vérifie que le véhicule n'est pas assigné à deux trajets simultanés et que les gares sont bien homologuées sur le réseau mutualisé.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Preview / Logs Section -->
+<div class="m-card">
+  <div class="m-card__header">
+    <div>
+      <h3 class="m-card__title">Historique Récent des Fichiers Importés</h3>
+      <p class="m-card__subtitle">Rapports d'intégration et détection des anomalies</p>
+    </div>
+  </div>
+
+  <div class="table-responsive">
+    <table class="m-table table-hover align-middle">
+      <thead>
+        <tr>
+          <th>Fichier &amp; Date</th>
+          <th>Type</th>
+          <th>Lignes Détectées</th>
+          <th>Succès</th>
+          <th>Erreurs</th>
+          <th>Statut</th>
+          <th style="text-align: right;">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <i class="fa-solid fa-file-excel text-success fs-5"></i>
+              <div>
+                <strong>Planning_Semaine43_NAGODE.xlsx</strong>
+                <div class="text-muted small">Importé le 21/10/2026 à 11:20 par K. Nagode</div>
+              </div>
+            </div>
+          </td>
+          <td>Planning départs</td>
+          <td><strong>48 départs</strong></td>
+          <td><span class="text-success fw-bold">48 créés</span></td>
+          <td><span class="text-muted">0 erreur</span></td>
+          <td><span class="badge-status badge-status--success">Intégré avec succès</span></td>
+          <td style="text-align: right;">
+            <button class="btn-icon" title="Voir le log détaillé" onclick="alert('Tous les 48 départs ont été intégrés sans anomalie.');"><i class="fa-solid fa-file-lines"></i></button>
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <div class="d-flex align-items-center gap-2">
+              <i class="fa-solid fa-file-csv text-primary fs-5"></i>
+              <div>
+                <strong>Grille_Tarifaire_Toussaint_2026.csv</strong>
+                <div class="text-muted small">Importé le 15/10/2026 à 09:14</div>
+              </div>
+            </div>
+          </td>
+          <td>Grille tarifs</td>
+          <td><strong>12 segments</strong></td>
+          <td><span class="text-success fw-bold">12 mis à jour</span></td>
+          <td><span class="text-muted">0 erreur</span></td>
+          <td><span class="badge-status badge-status--success">Intégré avec succès</span></td>
+          <td style="text-align: right;">
+            <button class="btn-icon" title="Voir le log détaillé"><i class="fa-solid fa-file-lines"></i></button>
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function simulateFileUploaded(input) {
+  if (input.files && input.files[0]) {
+    alert("Fichier sélectionné : " + input.files[0].name + " (" + Math.round(input.files[0].size/1024) + " Ko)\nCliquez sur 'Lancer la validation' pour intégrer les départs.");
+  }
+}
+
+function processImport() {
+  alert("Analyse du classeur en cours...\n✓ 28 départs validés\n✓ 0 conflit d'autocar détecté\n✓ Planning synchronisé avec le réseau national !");
+}
+</script>
+{% endblock %}
